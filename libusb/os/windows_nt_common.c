@@ -59,7 +59,7 @@ DLL_DECLARE_FUNC_PREFIXED(WINAPI, BOOL, p, GetMessageA, (LPMSG, HWND, UINT, UINT
 DLL_DECLARE_FUNC_PREFIXED(WINAPI, BOOL, p, PeekMessageA, (LPMSG, HWND, UINT, UINT, UINT));
 DLL_DECLARE_FUNC_PREFIXED(WINAPI, BOOL, p, PostThreadMessageA, (DWORD, UINT, WPARAM, LPARAM));
 
-static unsigned __stdcall windows_clock_gettime_threaded(void *param);
+static DWORD WINAPI windows_clock_gettime_threaded(void *param);
 
 /*
 * Converts a windows error to human readable string
@@ -331,14 +331,16 @@ static bool windows_init_clock(struct libusb_context *ctx)
 
 		usbi_dbg("timer thread will run on core #%d", i);
 
-		event = CreateEvent(NULL, FALSE, FALSE, NULL);
-		if (event == NULL) {
-			usbi_err(ctx, "could not create event: %s", windows_error_str(0));
-			return false;
-		}
+		//event = CreateEvent(NULL, FALSE, FALSE, NULL);
+		//if (event == NULL) {
+		//	usbi_err(ctx, "could not create event: %s", windows_error_str(0));
+		//	return false;
+		//}
 
-		timer_thread = (HANDLE)_beginthreadex(NULL, 0, windows_clock_gettime_threaded, (void *)event,
-				0, (unsigned int *)&timer_thread_id);
+		//timer_thread = (HANDLE)_beginthreadex(NULL, 0, windows_clock_gettime_threaded, (void *)event,
+		//		0, (unsigned int *)&timer_thread_id);
+		timer_thread = CreateThread(NULL, 0, windows_clock_gettime_threaded, (void *)event,
+				0, &timer_thread_id);
 		if (timer_thread == NULL) {
 			usbi_err(ctx, "unable to create timer thread - aborting");
 			CloseHandle(event);
@@ -349,13 +351,13 @@ static bool windows_init_clock(struct libusb_context *ctx)
 			usbi_warn(ctx, "unable to set timer thread affinity, timer discrepancies may arise");
 
 		// Wait for timer thread to init before continuing.
-		if (WaitForSingleObject(event, INFINITE) != WAIT_OBJECT_0) {
-			usbi_err(ctx, "failed to wait for timer thread to become ready - aborting");
-			CloseHandle(event);
-			return false;
-		}
+		//if (WaitForSingleObject(event, INFINITE) != WAIT_OBJECT_0) {
+		//	usbi_err(ctx, "failed to wait for timer thread to become ready - aborting");
+		//	CloseHandle(event);
+		//	return false;
+		//}
 
-		CloseHandle(event);
+		//CloseHandle(event);
 	} else {
 		usbi_dbg("no hires timer available on this platform");
 		hires_frequency = 0;
@@ -385,7 +387,7 @@ void windows_destroy_clock(void)
 /*
 * Monotonic and real time functions
 */
-static unsigned __stdcall windows_clock_gettime_threaded(void *param)
+static DWORD WINAPI windows_clock_gettime_threaded(void *param)
 {
 	struct timer_request *request;
 	LARGE_INTEGER hires_counter;
@@ -396,7 +398,7 @@ static unsigned __stdcall windows_clock_gettime_threaded(void *param)
 	pPeekMessageA(&msg, NULL, WM_USER, WM_USER, PM_NOREMOVE);
 
 	// Signal windows_init_clock() that we're ready to service requests
-	if (!SetEvent((HANDLE)param))
+	if (param && !SetEvent((HANDLE)param))
 		usbi_dbg("SetEvent failed for timer init event: %s", windows_error_str(0));
 	param = NULL;
 
